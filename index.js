@@ -1,6 +1,7 @@
 const express = require('express');
 const connectDB = require('./config/db');
 var cors = require('cors');
+let _http = require('http');
 
 
 const app = express();
@@ -22,4 +23,5 @@ app.use('/api/employee', require('./routes/api/employee'));
 
 const PORT = process.env.PORT || 5000;
 
+let httpServer = _http.createServer(app);
 httpServer.listen(PORT, () => console.log(`Listening on port ${PORT}`));
