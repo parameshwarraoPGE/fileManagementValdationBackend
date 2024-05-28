@@ -1,0 +1,6 @@
+{
+  "mongoURI": "mongodb+srv://p9sz:a65b7854n@raopgecluster.hmjpcsn.mongodb.net/?retryWrites=true&w=majority&appName=RaoPgeCluster",
+  "jwtsSecret": "mysecrettoken"  
+}
+
+
