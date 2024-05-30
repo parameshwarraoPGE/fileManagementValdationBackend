@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const { v4:uuid } = require('uuid');
+
 
 const batchFileSchema = new mongoose.Schema({
   batchId: {
@@ -14,30 +14,21 @@ const batchFileSchema = new mongoose.Schema({
   },
   batchStatus: {
     type: String,
-  },
-  batchFolderGCPpath: {
-    type: String,
-  },
+  }, 
   createdBy: {
     type: String
   },
   fileList: [{
     fileName: {
       type: String
-    },
-    gcpFilePath: {
-      type: String
-    },
-    department: {
-      type: String,
-      default: "general"
-    },
+    },    
     isTextExtractScanned: {
       type: Boolean,
       default: true
     },
     fileStatus: {
-      type: String
+      type: String,
+      default: "Awaiting_Validation"
     },
     scannedData: [
       {

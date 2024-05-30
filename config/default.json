@@ -1,6 +1,12 @@
 {
   "mongoURI": "mongodb+srv://p9sz:a65b7854n@raopgecluster.hmjpcsn.mongodb.net/?retryWrites=true&w=majority&appName=RaoPgeCluster",
-  "jwtsSecret": "mysecrettoken"  
+  "jwtsSecret": "mysecrettoken",
+  "firebase": {
+    "apiKey": "AIzaSyCm0hzxT5t0CDdLWyvgEgMjVBx41iIhnCA",
+    "authDomain": "fmspocrao.firebaseapp.com",
+    "projectId": "fmspocrao",
+    "storageBucket": "fmspocrao.appspot.com",
+    "messagingSenderId": "232685792120",
+    "appId": "1:232685792120:web:56d79b070ef7dd0c06f68d"
+  }  
 }
-
-
