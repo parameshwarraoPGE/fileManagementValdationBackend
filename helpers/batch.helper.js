@@ -7,6 +7,9 @@ let { getStorage, ref, listAll, getStream, uploadBytes , deleteObject } = requir
 const config = require('config');
 const firebaseConfigObject = config.get('firebase');
 
+//dummy awsdata
+const {dummyAWSData} = require('../helpers/dummyAwsTextractData');
+
 //initialize firebaseapp 
 let firebaseAppRef = initializeApp(firebaseConfigObject);
 //create firebase storage Ref
@@ -39,11 +42,12 @@ let addFileDetailToBatch = async (fileList = [], batchId) => {
 
     // Check for ObjectId format and post
     if (batchFileDetail) {
+      batchFileDetail.batchStatus = "awatingValidation";
       fileList.map((uploadedFileName) => {
         let fileDetail = {
           fileName: uploadedFileName,
           isTextExtractScanned: false,
-          fileStatus: "Awaiting_Validation",
+          fileStatus: "awaitingScan",
           scannedData: []
         };
         
@@ -59,7 +63,7 @@ let addFileDetailToBatch = async (fileList = [], batchId) => {
 
 let deleteFilesFromStorage = async (fileList = [], batchId, firebaseStorageRef ) => {
   try {
-    for(filename of fileList){
+    for(let filename of fileList){
       //set filepath
       let uplaodedFilePath = `${batchId}/${filename}`;
       //create firebase file ref
@@ -74,11 +78,62 @@ let deleteFilesFromStorage = async (fileList = [], batchId, firebaseStorageRef )
 };
 
 
+
+//update files
+let awsFileScan = async (fileName, batchId) => {
+  try {
+
+    let batchFileDetail = await batchFileDataModel.findById(batchId);
+
+    if(batchFileDetail && batchFileDetail.fileList && batchFileDetail.fileList.length > 0){
+      const index = batchFileDetail.fileList
+      .map(fileObj => fileObj.fileName.toLowerCase())
+      .indexOf(fileName.toLowerCase());
+      if (index > -1) { 
+        batchFileDetail.fileList[index].scannedData = dummyAWSData;
+        batchFileDetail.fileList[index].fileStatus = "scanned";
+        await batchFileDetail.save();
+      }
+      const isAllFilesScannedInBatch = batchFileDetail.fileList.every(fileObject => fileObject.fileStatus == "scanned");
+      if(isAllFilesScannedInBatch){
+        batchFileDetail.batchStatus = "awaitingValidation";
+        await batchFileDetail.save();
+      }
+  
+      }
+
+  } catch (err) {
+    throw err;
+  }
+};
+
+//batch scan
+let awsBatchScan = async (batchId) => {
+  try {
+
+    let batchFileDetail = await batchFileDataModel.findById(batchId);
+    for(let fileIndex in batchFileDetail.fileList){
+      batchFileDetail.fileList[fileIndex].scannedData = dummyAWSData;
+        batchFileDetail.fileList[fileIndex].fileStatus = "scanned";
+        await batchFileDetail.save();
+    }
+    batchFileDetail.batchStatus = "awaitingValidation";
+    await batchFileDetail.save();
+
+    
+
+  } catch (err) {
+    throw err;
+  }
+};
+
 /**
    * exporting functions.
    */
 module.exports = {
   deleteFileFromBatch: deleteFileFromBatch,
   addFileDetailToBatch : addFileDetailToBatch,
-  deleteFilesFromStorage: deleteFilesFromStorage
+  deleteFilesFromStorage: deleteFilesFromStorage,
+  awsFileScan: awsFileScan,
+  awsBatchScan: awsBatchScan
 };

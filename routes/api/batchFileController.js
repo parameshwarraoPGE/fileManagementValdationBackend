@@ -11,7 +11,7 @@ const paramChecker = require('../../libs/checkLib');
 const batchFileDataModel = require('../../models/batchFileModel');
 
 //helepr
-const {addFileDetailToBatch,deleteFileFromBatch, deleteFilesFromStorage} = require('../../helpers/batch.helper');
+const { addFileDetailToBatch, deleteFileFromBatch, deleteFilesFromStorage, awsBatchScan, awsFileScan } = require('../../helpers/batch.helper');
 
 /**Fire Base Storage */
 let formidable = require('formidable');
@@ -24,7 +24,7 @@ const archiver = require("archiver");
 
 //fire base imports
 let { initializeApp } = require('firebase/app');
-let { getStorage, ref, listAll, getStream, uploadBytes , deleteObject } = require('firebase/storage');
+let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject } = require('firebase/storage');
 
 
 const config = require('config');
@@ -44,8 +44,8 @@ let firebaseStorageRef = getStorage(firebaseAppRef);
 // @access   Private
 router.post(
   '/CreateBatch',
-  [auth, [    
-    check('batchName', 'Batch Name is required').not().isEmpty()    
+  [auth, [
+    check('batchName', 'Batch Name is required').not().isEmpty()
   ]],
   async (req, res) => {
     const errors = validationResult(req);
@@ -56,21 +56,22 @@ router.post(
     try {
 
 
-      
-      let { body: {       
+
+      let { body: {
         batchName,
         user
-         }
+      }
       } = req;
 
       const batchFile = new batchFileDataModel({
-        batchFolderGCPpath:"",
+        batchFolderGCPpath: "",
         batchName: batchName,
+        batchStatus: "draft",
         createdBy: user,
-        fileList:[]
+        fileList: []
       });
 
-      let savedBatchFileDetails = await batchFile.save();      
+      let savedBatchFileDetails = await batchFile.save();
 
       res.json(batchFile);
 
@@ -116,7 +117,7 @@ router.post('/List', auth, async (req, res) => {
       query.createdBy = new RegExp(req.body.createdBy, "i");
     }
 
-    
+
 
 
     /*let batchFileData = await batchFileDataModel
@@ -208,7 +209,7 @@ router.delete('/deleteBatch/:id', auth, async (req, res) => {
     let filelist = deleteBatchData.fileList.map(fileObject => fileObject.fileName);
 
     //remove files from GCP
-    await deleteFilesFromStorage(filelist,req.params.id,firebaseStorageRef);
+    await deleteFilesFromStorage(filelist, req.params.id, firebaseStorageRef);
 
     res.status(200).json({ message: 'Batch Removed!' });
   } catch (err) {
@@ -290,279 +291,333 @@ router.post('/fileList', [
 ],
   async (req, res) => {
 
-      try {
+    try {
 
-          const errors = validationResult(req);
-          if (!errors.isEmpty()) {
-              return res.status(400).json({ errors: errors.array() });
-          }
-
-          //extract base path
-
-          let { body: { filePath } } = req;
-
-          //set the folder name
-
-          let foldername = `${filePath}`;
-
-          //create firebase reference
-
-          let listRef = ref(firebaseStorageRef, foldername);
-
-          //use list all to get the ref name
-
-          let allFiles = await listAll(listRef);
-
-          let { items } = allFiles;
-
-          //check if files are empty
-
-          if (items.length < 0) {
-              return res.status(204).json({ files: [] });
-          }
-
-          let filesPath = items.map((fileboject) => {
-              return fileboject._location;
-          });
-
-
-
-          return res.status(200).json({ files: filesPath });
-
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
       }
-      catch (err) {
 
-          return res.status(500).json({ error: err });
+      //extract base path
 
+      let { body: { filePath } } = req;
+
+      //set the folder name
+
+      let foldername = `${filePath}`;
+
+      //create firebase reference
+
+      let listRef = ref(firebaseStorageRef, foldername);
+
+      //use list all to get the ref name
+
+      let allFiles = await listAll(listRef);
+
+      let { items } = allFiles;
+
+      //check if files are empty
+
+      if (items.length < 0) {
+        return res.status(204).json({ files: [] });
       }
+
+      let filesPath = items.map((fileboject) => {
+        return fileboject._location;
+      });
+
+
+
+      return res.status(200).json({ files: filesPath });
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
   });
 
 
-  /**
-   * This is used to compress and download
-   */
+/**
+ * This is used to compress and download
+ */
 
-  router.post('/compressedFileListDownload', [
+router.post('/compressedFileListDownload', [
   check('userPath', 'please send file basePath!!').not().isEmpty(),
   check('compressedFilename', 'please send compressedFileName!!').not().isEmpty()
 ],
   async (req, res) => {
 
-      try {
+    try {
 
-          const errors = validationResult(req);
-          if (!errors.isEmpty()) {
-              return res.status(400).json({ errors: errors.array() });
-          }
-
-          let { body: { userPath: filePath, compressedFilename } } = req;
-
-          let foldername = `${filePath}`;
-
-          let listRef = ref(firebaseStorageRef, foldername);
-
-          //get all file paths using list all
-
-          let allFiles = await listAll(listRef);
-
-          let { items } = allFiles;
-
-          if (items.length < 0) {
-              return res.status(204).json({ files: [] });
-          }
-          //create output compressed file stream
-
-          let outputStream = fs.createWriteStream('fileProcess/compressedFile.zip');
-
-          //create archive 
-
-          let archive = archiver('zip', {
-              zlib: { level: 9 }
-          });
-
-          //pipe the outstream to archive
-          archive.pipe(outputStream);
-
-          let file = items.map((fileboject) => {
-
-              //get the file name
-              let filePath = `${fileboject._location.path_}`;
-
-              let fileName = filePath.split('/').pop();
-
-              //create reference
-              let firebaseReference = ref(firebaseStorageRef, filePath);
-
-              //get the stream
-              let file = getStream(firebaseReference);
-
-              //append the firebae file streams to zip archive
-
-              archive.append(file, { name: fileName });
-
-
-          });
-
-          res.attachment(`${compressedFilename}.zip`);
-
-          // pipe the zip to response
-          archive.pipe(res);
-
-          //complete the archive
-
-          await archive.finalize();
-
-          //set status code
-
-          res.status(200);
-
-          //return response
-
-
-          return res;
-
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
       }
-      catch (err) {
 
-          return res.status(500).json({ error: err });
+      let { body: { userPath: filePath, compressedFilename } } = req;
 
+      let foldername = `${filePath}`;
+
+      let listRef = ref(firebaseStorageRef, foldername);
+
+      //get all file paths using list all
+
+      let allFiles = await listAll(listRef);
+
+      let { items } = allFiles;
+
+      if (items.length < 0) {
+        return res.status(204).json({ files: [] });
       }
+      //create output compressed file stream
+
+      let outputStream = fs.createWriteStream('fileProcess/compressedFile.zip');
+
+      //create archive 
+
+      let archive = archiver('zip', {
+        zlib: { level: 9 }
+      });
+
+      //pipe the outstream to archive
+      archive.pipe(outputStream);
+
+      let file = items.map((fileboject) => {
+
+        //get the file name
+        let filePath = `${fileboject._location.path_}`;
+
+        let fileName = filePath.split('/').pop();
+
+        //create reference
+        let firebaseReference = ref(firebaseStorageRef, filePath);
+
+        //get the stream
+        let file = getStream(firebaseReference);
+
+        //append the firebae file streams to zip archive
+
+        archive.append(file, { name: fileName });
+
+
+      });
+
+      res.attachment(`${compressedFilename}.zip`);
+
+      // pipe the zip to response
+      archive.pipe(res);
+
+      //complete the archive
+
+      await archive.finalize();
+
+      //set status code
+
+      res.status(200);
+
+      //return response
+
+
+      return res;
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
   });
 
 
-  /**
-   * takes form file as input and uploads it GCP firebase storage, 
-   */
+/**
+ * takes form file as input and uploads it GCP firebase storage, 
+ */
 
-  router.post('/uploadFile',
+router.post('/uploadFile',
   async (req, res) => {
 
-      try {
+    try {
 
 
-          if (!req.get('filePath')) {
-              return res.status(400).json({ error: 'send GCP File path' });
-          }
-
-          //start a for to handle incoming file
-
-          let form = new formidable.IncomingForm({
-              multiples: true,
-              keepExtensions: true
-          });
-
-          let uploadFile = await form.parse(req);
-
-          let [Feilds, Files] = uploadFile;
-
-          //get the user name i.e folder name from the header
-
-          let folderDirectory = req.get('filePath');
-
-          let { uploadfiles } = Files;
-
-          //get file name to update in DB
-          let fileNamesList = [];
-
-          if (uploadfiles.length > 0) {
-              for (let fileobject of uploadfiles) {
-
-                  //extract original filename and file path
-
-                  let { originalFilename, filepath} = fileobject;                   
-
-                  //set file object
-
-                  let fileobjectRef = fileobject;
-                  // Create a file readable stream
-                  let readerStream = fs.readFileSync(filepath);
-                  //set filepath
-                  let uplaodedFilePath = `${folderDirectory}/${originalFilename}`;
-
-                  //create firebase file ref
-                  let uploadRef = ref(firebaseStorageRef, uplaodedFilePath);
-
-                  //upload to firebase
-
-                  let uploadStats = await uploadBytes(uploadRef, readerStream);
-
-                  fileNamesList.push(originalFilename);
-              }
-          }
-
-          //folder directory is batchFileID
-          addFileDetailToBatch(fileNamesList,folderDirectory);
-
-
-
-          return res.status(200).json({ message: "file uploaded", uploaded: true });
-
+      if (!req.get('filePath')) {
+        return res.status(400).json({ error: 'send GCP File path' });
       }
-      catch (err) {
 
-          return res.status(500).json({ error: err });
+      //start a for to handle incoming file
 
+      let form = new formidable.IncomingForm({
+        multiples: true,
+        keepExtensions: true
+      });
+
+      let uploadFile = await form.parse(req);
+
+      let [Feilds, Files] = uploadFile;
+
+      //get the user name i.e folder name from the header
+
+      let folderDirectory = req.get('filePath');
+
+      let { uploadfiles } = Files;
+
+      //get file name to update in DB
+      let fileNamesList = [];
+
+      if (uploadfiles.length > 0) {
+        for (let fileobject of uploadfiles) {
+
+          //extract original filename and file path
+
+          let { originalFilename, filepath } = fileobject;
+
+          //set file object
+
+          let fileobjectRef = fileobject;
+          // Create a file readable stream
+          let readerStream = fs.readFileSync(filepath);
+          //set filepath
+          let uplaodedFilePath = `${folderDirectory}/${originalFilename}`;
+
+          //create firebase file ref
+          let uploadRef = ref(firebaseStorageRef, uplaodedFilePath);
+
+          //upload to firebase
+
+          let uploadStats = await uploadBytes(uploadRef, readerStream);
+
+          fileNamesList.push(originalFilename);
+        }
       }
+
+      //folder directory is batchFileID
+      addFileDetailToBatch(fileNamesList, folderDirectory);
+
+
+
+      return res.status(200).json({ message: "file uploaded", uploaded: true });
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
   });
 
-  
-
-  //call below to delete the files in GCP Firbasestore
-
-  //pass the user name as userpath in req body
 
 
-  router.delete('/deleteFile',[
-      check('filesToDelete','send files to delete in array').not().isEmpty(),
-      check('batchId', 'send the batchId!!').not().isEmpty()
-  ],
+//call below to delete the files in GCP Firbasestore
+
+//pass the user name as userpath in req body
+
+
+router.delete('/deleteFile', [
+  check('filesToDelete', 'send files to delete in array').not().isEmpty(),
+  check('batchId', 'send the batchId!!').not().isEmpty()
+],
   async (req, res) => {
 
-      try {
+    try {
 
-          const errors = validationResult(req);
-          if (!errors.isEmpty()) {
-              return res.status(400).json({ errors: errors.array() });
-          }
-         
-          //start a for to handle incoming file
-
-          let { body: { filesToDelete ,  batchId } } = req;          
-          
-          //container to hold status
-          let deleteFileStatus = [];
-
-          if (filesToDelete.length > 0) {
-              for (let filename of filesToDelete) {
-
-                                    
-                  //set filepath
-                  let uplaodedFilePath = `${batchId}/${filename}`;
-
-                  //create firebase file ref
-                  let deleteFileRef = ref(firebaseStorageRef, uplaodedFilePath);
-
-                  //upload to firebase
-
-                  let deletedFileStatus = await deleteObject(deleteFileRef);
-                  //update in batch
-                  await deleteFileFromBatch(filename,batchId);
-
-                  //update status 
-                  deleteFileStatus.push(deletedFileStatus);
-              }
-          }
-
-          return res.status(200).json({ message: "file uploaded", fileDeletedStatus: deleteFileStatus });
-
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
       }
-      catch (err) {
 
-          return res.status(500).json({ error: err });
+      //start a for to handle incoming file
 
+      let { body: { filesToDelete, batchId } } = req;
+
+      //container to hold status
+      let deleteFileStatus = [];
+
+      if (filesToDelete.length > 0) {
+        for (let filename of filesToDelete) {
+
+
+          //set filepath
+          let uplaodedFilePath = `${batchId}/${filename}`;
+
+          //create firebase file ref
+          let deleteFileRef = ref(firebaseStorageRef, uplaodedFilePath);
+
+          //upload to firebase
+
+          let deletedFileStatus = await deleteObject(deleteFileRef);
+          //update in batch
+          await deleteFileFromBatch(filename, batchId);
+
+          //update status 
+          deleteFileStatus.push(deletedFileStatus);
+        }
       }
+
+      return res.status(200).json({ message: "file deleted!!", fileDeletedStatus: deleteFileStatus });
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
   });
 
 /**Firebase Storage */
+
+//scanner API's
+
+router.post('/awsFileScan', [
+  check('filesToScan', 'send files to delete in array').not().isEmpty(),
+  check('batchId', 'send the batchId!!').not().isEmpty()
+],
+  async (req, res) => {
+
+    try {
+
+      //start a for to handle incoming file
+
+      let { body: { filesToScan, batchId } } = req;
+
+      if (filesToScan.length > 0) {
+        for (let filename of filesToScan) {
+          await awsFileScan(filename, batchId);
+        }
+      }
+
+
+      return res.status(200).json({ message: "files Have Been Scanned!!", fileDeletedStatus: deleteFileStatus });
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
+  });
+
+  router.post('/awsBatchScan', [   
+    check('batchId', 'send the batchId!!').not().isEmpty()
+  ],
+    async (req, res) => {
+  
+      try {
+  
+        //start a for to handle incoming file  
+        let { body: {  batchId } } = req;
+  
+        await awsBatchScan(batchId);
+  
+  
+        return res.status(200).json({ message: "All files Have Been Scanned!!", fileDeletedStatus: deleteFileStatus });
+  
+      }
+      catch (err) {
+  
+        return res.status(500).json({ error: err });
+  
+      }
+    });
 
 module.exports = router;

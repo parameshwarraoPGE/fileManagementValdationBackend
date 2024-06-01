@@ -49,7 +49,12 @@ const batchFileSchema = new mongoose.Schema({
             inputType: {
               type: String
             },
-            inputOptions: []
+            inputOptions: [
+              {
+                feildName: String,
+                feildValue: String
+              }
+            ]
           }
         ]
       }
