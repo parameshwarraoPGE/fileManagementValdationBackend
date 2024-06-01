@@ -10,6 +10,9 @@ const paramChecker = require('../../libs/checkLib');
 
 const batchFileDataModel = require('../../models/batchFileModel');
 
+//helepr
+const {addFileDetailToBatch,deleteFileFromBatch, deleteFilesFromStorage} = require('../../helpers/batch.helper');
+
 /**Fire Base Storage */
 let formidable = require('formidable');
 
@@ -169,19 +172,19 @@ router.get('/batchStatusOptions', auth, async (req, res) => {
 });
 
 
-// @route    GET api/employeeDetail/:id
-// @desc     Get employeeDetail by ID
+// @route    GET api/batchDetail/:id
+// @desc     Get batchDetail by ID
 // @access   Private
 router.get('/batchFileDetail/:id', auth, async (req, res) => {
   try {
-    const employeeDetail = await batchFileDataModel.findById(req.params.id);
+    const batchDetail = await batchFileDataModel.findById(req.params.id);
 
     // Check for ObjectId format and post
-    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/) || !employeeDetail) {
-      return res.status(204).json({ message: 'employee details not found!' });
+    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/) || !batchDetail) {
+      return res.status(204).json({ message: 'batch details not found!' });
     }
 
-    res.status(200).json(employeeDetail);
+    res.status(200).json(batchDetail);
   } catch (err) {
     console.error(err.message);
 
@@ -202,6 +205,10 @@ router.delete('/deleteBatch/:id', auth, async (req, res) => {
     if (!req.params.id.match(/^[0-9a-fA-F]{24}$/) || !deleteBatchData) {
       return res.status(204).json({ message: 'Batch not found' });
     }
+    let filelist = deleteBatchData.fileList.map(fileObject => fileObject.fileName);
+
+    //remove files from GCP
+    await deleteFilesFromStorage(filelist,req.params.id,firebaseStorageRef);
 
     res.status(200).json({ message: 'Batch Removed!' });
   } catch (err) {
@@ -424,7 +431,7 @@ router.post('/fileList', [
 
 
   /**
-   * takes form file as input and uploads it GCP firebase storage
+   * takes form file as input and uploads it GCP firebase storage, 
    */
 
   router.post('/uploadFile',
@@ -452,10 +459,13 @@ router.post('/fileList', [
 
           let folderDirectory = req.get('filePath');
 
-          let { samplefile } = Files;
+          let { uploadfiles } = Files;
 
-          if (samplefile.length > 0) {
-              for (let fileobject of samplefile) {
+          //get file name to update in DB
+          let fileNamesList = [];
+
+          if (uploadfiles.length > 0) {
+              for (let fileobject of uploadfiles) {
 
                   //extract original filename and file path
 
@@ -475,10 +485,15 @@ router.post('/fileList', [
                   //upload to firebase
 
                   let uploadStats = await uploadBytes(uploadRef, readerStream);
+
+                  fileNamesList.push(originalFilename);
               }
-
-
           }
+
+          //folder directory is batchFileID
+          addFileDetailToBatch(fileNamesList,folderDirectory);
+
+
 
           return res.status(200).json({ message: "file uploaded", uploaded: true });
 
@@ -499,7 +514,7 @@ router.post('/fileList', [
 
   router.delete('/deleteFile',[
       check('filesToDelete','send files to delete in array').not().isEmpty(),
-      check('userPath', 'send the file directory!!').not().isEmpty()
+      check('batchId', 'send the batchId!!').not().isEmpty()
   ],
   async (req, res) => {
 
@@ -512,7 +527,7 @@ router.post('/fileList', [
          
           //start a for to handle incoming file
 
-          let { body: { filesToDelete , filePath } } = req;          
+          let { body: { filesToDelete ,  batchId } } = req;          
           
           //container to hold status
           let deleteFileStatus = [];
@@ -522,7 +537,7 @@ router.post('/fileList', [
 
                                     
                   //set filepath
-                  let uplaodedFilePath = `${filePath}/${filename}`;
+                  let uplaodedFilePath = `${batchId}/${filename}`;
 
                   //create firebase file ref
                   let deleteFileRef = ref(firebaseStorageRef, uplaodedFilePath);
@@ -530,6 +545,10 @@ router.post('/fileList', [
                   //upload to firebase
 
                   let deletedFileStatus = await deleteObject(deleteFileRef);
+                  //update in batch
+                  await deleteFileFromBatch(filename,batchId);
+
+                  //update status 
                   deleteFileStatus.push(deletedFileStatus);
               }
           }
