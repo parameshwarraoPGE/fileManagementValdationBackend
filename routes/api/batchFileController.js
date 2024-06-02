@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { check, validationResult } = require('express-validator');
 const auth = require('../../middleware/auth');
+const { Readable, Stream } = require('node:stream');
 
 
 const paramChecker = require('../../libs/checkLib');
@@ -24,10 +25,11 @@ const archiver = require("archiver");
 
 //fire base imports
 let { initializeApp } = require('firebase/app');
-let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject } = require('firebase/storage');
+let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject, getBytes } = require('firebase/storage');
 
 
 const config = require('config');
+const { blob } = require('stream/consumers');
 const firebaseConfigObject = config.get('firebase');
 
 //initialize firebaseapp 
@@ -430,6 +432,47 @@ router.post('/compressedFileListDownload', [
     }
   });
 
+/**
+ * single file download
+ */
+
+router.post('/singleFileDownload', [
+  check('fileName', 'please send the file Name').not().isEmpty(),
+  check('batchId', 'please send the batchId!!').not().isEmpty()
+],
+  async (req, res) => {
+
+    try {
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { body: { fileName, batchId } } = req;
+
+
+      let filePath = `${batchId}/${fileName}`;
+
+
+      //create reference
+      let firebaseReference = ref(firebaseStorageRef, filePath);
+
+
+      let fileArrayBuffer = await getBytes(firebaseReference);
+      const fileBuffer = new Buffer.from(fileArrayBuffer);
+      res.end(fileBuffer);
+      return res;
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
+  });
+
+
+
 
 /**
  * takes form file as input and uploads it GCP firebase storage, 
@@ -597,27 +640,27 @@ router.post('/awsFileScan', [
     }
   });
 
-  router.post('/awsBatchScan', [   
-    check('batchId', 'send the batchId!!').not().isEmpty()
-  ],
-    async (req, res) => {
-  
-      try {
-  
-        //start a for to handle incoming file  
-        let { body: {  batchId } } = req;
-  
-        await awsBatchScan(batchId);
-  
-  
-        return res.status(200).json({ message: "All files Have Been Scanned!!", fileDeletedStatus: deleteFileStatus });
-  
-      }
-      catch (err) {
-  
-        return res.status(500).json({ error: err });
-  
-      }
-    });
+router.post('/awsBatchScan', [
+  check('batchId', 'send the batchId!!').not().isEmpty()
+],
+  async (req, res) => {
+
+    try {
+
+      //start a for to handle incoming file  
+      let { body: { batchId } } = req;
+
+      await awsBatchScan(batchId);
+
+
+      return res.status(200).json({ message: "All files Have Been Scanned!!", fileDeletedStatus: deleteFileStatus });
+
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
+  });
 
 module.exports = router;
