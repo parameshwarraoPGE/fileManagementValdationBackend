@@ -10,6 +10,7 @@ const paramChecker = require('../../libs/checkLib');
 
 
 const batchFileDataModel = require('../../models/batchFileModel');
+const loggedUser = require('../../models/loggedUser');
 
 //helepr
 const { addFileDetailToBatch, deleteFileFromBatch, deleteFilesFromStorage, awsBatchScan, awsFileScan } = require('../../helpers/batch.helper');
@@ -60,16 +61,26 @@ router.post(
 
 
       let { body: {
-        batchName,
-        user
-      }
+        batchName        
+      }, user
       } = req;
+
+      let batchCreatedByUser = "";
+      
+      const loggedUserDetail = await loggedUser.findById(user.id);
+      
+      if(loggedUserDetail){
+        batchCreatedByUser = loggedUserDetail.name;
+      }
+    
+
+      
 
       const batchFile = new batchFileDataModel({
         batchFolderGCPpath: "",
         batchName: batchName,
         batchStatus: "draft",
-        createdBy: user,
+        createdBy: batchCreatedByUser,
         fileList: []
       });
 
