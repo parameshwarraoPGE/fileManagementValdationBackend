@@ -75,7 +75,7 @@ router.post(
 
       let savedBatchFileDetails = await batchFile.save();
 
-      res.json(batchFile);
+      res.json(savedBatchFileDetails);
 
     } catch (err) {
       console.error(err.message);
