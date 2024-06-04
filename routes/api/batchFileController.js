@@ -26,7 +26,7 @@ const archiver = require("archiver");
 
 //fire base imports
 let { initializeApp } = require('firebase/app');
-let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject, getBytes, getBlob } = require('firebase/storage');
+let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject, getBytes, getDownloadURL } = require('firebase/storage');
 
 
 const config = require('config');
@@ -524,6 +524,41 @@ router.post('/singleFileBase64', [
 
     }
   });
+
+  router.post('/singleFileDownloadBucketURL', [
+    check('fileName', 'please send the file Name').not().isEmpty(),
+    check('batchId', 'please send the batchId!!').not().isEmpty()
+  ],
+    async (req, res) => {
+  
+      try {
+  
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ errors: errors.array() });
+        }
+  
+        let { body: { fileName, batchId } } = req;
+  
+  
+        let filePath = `${batchId}/${fileName}`;
+  
+  
+        //create reference
+        let firebaseReference = ref(firebaseStorageRef, filePath);
+  
+        
+        let pdfFileUrl = await getDownloadURL(firebaseReference);
+        
+        return res.status(200).json({ bucketPdfUrl : pdfFileUrl });
+        
+      }
+      catch (err) {
+  
+        return res.status(500).json({ error: err });
+  
+      }
+    });
 
 
 
