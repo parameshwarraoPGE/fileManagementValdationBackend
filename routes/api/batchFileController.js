@@ -535,7 +535,7 @@ router.post('/uploadFile',
       }
 
       //folder directory is batchFileID
-      addFileDetailToBatch(fileNamesList, folderDirectory);
+      await addFileDetailToBatch(fileNamesList, folderDirectory);
 
 
 
