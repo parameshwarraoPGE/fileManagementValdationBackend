@@ -26,7 +26,7 @@ const archiver = require("archiver");
 
 //fire base imports
 let { initializeApp } = require('firebase/app');
-let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject, getBytes } = require('firebase/storage');
+let { getStorage, ref, listAll, getStream, uploadBytes, deleteObject, getBytes, getBlob } = require('firebase/storage');
 
 
 const config = require('config');
@@ -474,6 +474,49 @@ router.post('/singleFileDownload', [
       const fileBuffer = new Buffer.from(fileArrayBuffer);
       res.end(fileBuffer);
       return res;
+    }
+    catch (err) {
+
+      return res.status(500).json({ error: err });
+
+    }
+  });
+
+
+  /**
+ * single file download
+ */
+
+router.post('/singleFileBase64', [
+  check('fileName', 'please send the file Name').not().isEmpty(),
+  check('batchId', 'please send the batchId!!').not().isEmpty()
+],
+  async (req, res) => {
+
+    try {
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      let { body: { fileName, batchId } } = req;
+
+
+      let filePath = `${batchId}/${fileName}`;
+
+
+      //create reference
+      let firebaseReference = ref(firebaseStorageRef, filePath);
+
+      
+      let fileArrayBuffer = await getBytes(firebaseReference);
+      const fileBuffer = new Buffer.from(fileArrayBuffer);
+
+      let base64String = fileBuffer.toString('base64');
+      let formattedbase64String = `data:application/pdf;base64,${base64String}`;
+      return res.status(200).json({ convertedBase64String:formattedbase64String });
+      
     }
     catch (err) {
 
